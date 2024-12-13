@@ -106,11 +106,14 @@
      */
     if ([menuItem action] == @selector(toggleFullScreen:)) {
         SDL_Window *window = [self findSDLWindow];
-        if (window == NULL) {
+        if (!window) {
             return NO;
-        } else if (window->flags & SDL_WINDOW_FULLSCREEN) {
+        }
+
+        SDL_CocoaWindowData *data = (__bridge SDL_CocoaWindowData *)window->internal;
+        if ((window->flags & SDL_WINDOW_FULLSCREEN) && ![data.listener isInFullscreenSpace]) {
             return NO;
-        } else if ((window->flags & SDL_WINDOW_RESIZABLE) == 0) {
+        } else if (!(window->flags & SDL_WINDOW_RESIZABLE)) {
             return NO;
         }
     }
@@ -1203,6 +1206,14 @@ static NSCursor *Cocoa_GetDesiredCursor(void)
         _data.videodata.modifierFlags = (_data.videodata.modifierFlags & ~NSEventModifierFlagCapsLock) | newflags;
         SDL_ToggleModState(SDL_KMOD_CAPS, newflags ? true : false);
     }
+
+    /* Restore fullscreen mode unless the window is deminiaturizing.
+     * If it is, fullscreen will be restored when deminiaturization is complete.
+     */
+    if (!(window->flags & SDL_WINDOW_MINIMIZED) &&
+        [self windowOperationIsPending:PENDING_OPERATION_ENTER_FULLSCREEN]) {
+        SDL_UpdateFullscreenMode(window, true, true);
+    }
 }
 
 - (void)windowDidResignKey:(NSNotification *)aNotification
@@ -1548,7 +1559,7 @@ static NSCursor *Cocoa_GetDesiredCursor(void)
 static void Cocoa_SendMouseButtonClicks(SDL_Mouse *mouse, NSEvent *theEvent, SDL_Window *window, Uint8 button, bool down)
 {
     SDL_MouseID mouseID = SDL_DEFAULT_MOUSE_ID;
-    const int clicks = (int)[theEvent clickCount];
+    //const int clicks = (int)[theEvent clickCount];
     SDL_Window *focus = SDL_GetKeyboardFocus();
 
     // macOS will send non-left clicks to background windows without raising them, so we need to
@@ -1557,14 +1568,16 @@ static void Cocoa_SendMouseButtonClicks(SDL_Mouse *mouse, NSEvent *theEvent, SDL
     //  event for the background window, this just makes sure the button is reported at the
     //  correct position in its own event.
     if (focus && ([theEvent window] == ((__bridge SDL_CocoaWindowData *)focus->internal).nswindow)) {
-        SDL_SendMouseButtonClicks(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down, clicks);
+        //SDL_SendMouseButtonClicks(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down, clicks);
+        SDL_SendMouseButton(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down);
     } else {
         const float orig_x = mouse->x;
         const float orig_y = mouse->y;
         const NSPoint point = [theEvent locationInWindow];
         mouse->x = (int)point.x;
         mouse->y = (int)(window->h - point.y);
-        SDL_SendMouseButtonClicks(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down, clicks);
+        //SDL_SendMouseButtonClicks(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down, clicks);
+        SDL_SendMouseButton(Cocoa_GetEventTimestamp([theEvent timestamp]), window, mouseID, button, down);
         mouse->x = orig_x;
         mouse->y = orig_y;
     }
@@ -2629,8 +2642,8 @@ void Cocoa_RestoreWindow(SDL_VideoDevice *_this, SDL_Window *window)
         SDL_CocoaWindowData *data = (__bridge SDL_CocoaWindowData *)window->internal;
         NSWindow *nswindow = data.nswindow;
 
-        if ([data.listener windowOperationIsPending:(PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN)] ||
-            [data.listener isInFullscreenSpaceTransition]) {
+        if (([data.listener windowOperationIsPending:(PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN)] &&
+            ![data.nswindow isMiniaturized]) || [data.listener isInFullscreenSpaceTransition]) {
             Cocoa_SyncWindow(_this, window);
         }
 
@@ -2733,6 +2746,9 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
         NSWindow *nswindow = data.nswindow;
         NSRect rect;
 
+        // This is a synchronous operation, so always clear the pending flags.
+        [data.listener clearPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN | PENDING_OPERATION_LEAVE_FULLSCREEN];
+
         // The view responder chain gets messed with during setStyleMask
         if ([data.sdlContentView nextResponder] == data.listener) {
             [data.sdlContentView setNextResponder:nil];
@@ -2801,14 +2817,7 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
         // When the window style changes the title is cleared
         if (!fullscreen) {
             Cocoa_SetWindowTitle(_this, window);
-
             data.was_zoomed = NO;
-
-            if ([data.listener windowOperationIsPending:PENDING_OPERATION_MINIMIZE]) {
-                Cocoa_WaitForMiniaturizable(window);
-                [data.listener addPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN];
-                [nswindow miniaturize:nil];
-            }
         }
 
         if (SDL_ShouldAllowTopmost() && fullscreen) {
@@ -2840,6 +2849,16 @@ SDL_FullscreenResult Cocoa_SetWindowFullscreen(SDL_VideoDevice *_this, SDL_Windo
             } else {
                 SDL_SetWindowSafeAreaInsets(data.window, 0, 0, 0, 0);
             }
+        }
+
+        /* When coming out of fullscreen to minimize, this needs to happen after the window
+         * is made key again, or it won't minimize on 15.0 (Sequoia).
+         */
+        if (!fullscreen && [data.listener windowOperationIsPending:PENDING_OPERATION_MINIMIZE]) {
+            Cocoa_WaitForMiniaturizable(window);
+            [data.listener addPendingWindowOperation:PENDING_OPERATION_ENTER_FULLSCREEN];
+            [data.listener clearPendingWindowOperation:PENDING_OPERATION_MINIMIZE];
+            [nswindow miniaturize:nil];
         }
 
         ScheduleContextUpdates(data);

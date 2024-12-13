@@ -128,9 +128,6 @@ static VideoBootStrap *bootstrap[] = {
 #ifdef SDL_VIDEO_DRIVER_QNX
     &QNX_bootstrap,
 #endif
-#ifdef SDL_VIDEO_DRIVER_NGAGE
-    &NGAGE_bootstrap,
-#endif
 #ifdef SDL_VIDEO_DRIVER_OFFSCREEN
     &OFFSCREEN_bootstrap,
 #endif
@@ -1660,19 +1657,20 @@ SDL_VideoDisplay *SDL_GetVideoDisplayForFullscreenWindow(SDL_Window *window)
         displayID = window->current_fullscreen_mode.displayID;
     }
 
-    /* The floating position is used here as a very common pattern is
-     * SDL_SetWindowPosition() followed by SDL_SetWindowFullscreen() to make the
-     * window fullscreen desktop on a specific display. If the backend doesn't
-     * support changing the window position, or the compositor hasn't yet actually
-     * moved the window, the current position won't be updated at the time of the
-     * fullscreen call.
+    /* This is used to handle the very common pattern of SDL_SetWindowPosition()
+     * followed immediately by SDL_SetWindowFullscreen() to make the window fullscreen
+     * desktop on a specific display. If the backend doesn't support changing the
+     * window position, or an async window manager hasn't yet actually moved the window,
+     * the current position won't be updated at the time of the fullscreen call.
      */
     if (!displayID) {
-        if (window->flags & SDL_WINDOW_FULLSCREEN && !window->is_repositioning) {
-            // This was a window manager initiated move, use the current position.
-            displayID = GetDisplayForRect(window->x, window->y, 1, 1);
-        } else {
+        if (window->use_pending_position_for_fullscreen) {
+            // The last coordinates were client requested; use the pending floating coordinates.
             displayID = GetDisplayForRect(window->floating.x, window->floating.y, window->floating.w, window->floating.h);
+        }
+        else {
+            // The last coordinates were from the window manager; use the current position.
+            displayID = GetDisplayForRect(window->x, window->y, 1, 1);
         }
     }
     if (!displayID) {
@@ -2413,7 +2411,7 @@ SDL_Window *SDL_CreateWindowWithProperties(SDL_PropertiesID props)
     if (flags & SDL_WINDOW_FULLSCREEN || IsFullscreenOnly(_this)) {
         SDL_Rect bounds;
 
-        SDL_GetDisplayBounds(display->id, &bounds);
+        SDL_GetDisplayBounds(display ? display->id : SDL_GetPrimaryDisplay(), &bounds);
         window->x = bounds.x;
         window->y = bounds.y;
         window->w = bounds.w;
@@ -2806,11 +2804,10 @@ bool SDL_SetWindowPosition(SDL_Window *window, int x, int y)
     window->floating.y = y;
     window->undefined_x = false;
     window->undefined_y = false;
+    window->use_pending_position_for_fullscreen = true;
 
     if (_this->SetWindowPosition) {
-        window->is_repositioning = true;
         const bool result = _this->SetWindowPosition(_this, window);
-        window->is_repositioning = false;
         if (result) {
             SDL_SyncIfRequired(window);
         }
@@ -3122,7 +3119,8 @@ bool SDL_SetWindowMaximumSize(SDL_Window *window, int max_w, int max_h)
         return SDL_InvalidParamError("max_h");
     }
 
-    if (max_w < window->min_w || max_h < window->min_h) {
+    if ((max_w && max_w < window->min_w) ||
+        (max_h && max_h < window->min_h)) {
         return SDL_SetError("SDL_SetWindowMaximumSize(): Tried to set maximum size smaller than minimum size");
     }
 
@@ -5296,6 +5294,10 @@ bool SDL_StartTextInputWithProperties(SDL_Window *window, SDL_PropertiesID props
         if (!SDL_CopyProperties(props, window->text_input_props)) {
             return false;
         }
+    }
+
+    if (_this->SetTextInputProperties) {
+        _this->SetTextInputProperties(_this, window, props);
     }
 
     // Show the on-screen keyboard, if desired

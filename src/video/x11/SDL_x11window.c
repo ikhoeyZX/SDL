@@ -38,6 +38,8 @@
 #include "SDL_x11opengles.h"
 #endif
 
+#include "SDL_x11xsync.h"
+
 #define _NET_WM_STATE_REMOVE 0l
 #define _NET_WM_STATE_ADD    1l
 
@@ -509,6 +511,7 @@ bool X11_CreateWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Properties
     }
 
     const bool force_override_redirect = SDL_GetHintBoolean(SDL_HINT_X11_FORCE_OVERRIDE_REDIRECT, false);
+    const bool use_resize_sync = (window->flags & SDL_WINDOW_VULKAN); /* doesn't work well with Vulkan */
     SDL_WindowData *windowdata;
     Display *display = data->display;
     int screen = displaydata->screen;
@@ -770,7 +773,7 @@ bool X11_CreateWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Properties
     }
 
     {
-        Atom protocols[3];
+        Atom protocols[4];
         int proto_count = 0;
 
         protocols[proto_count++] = data->atoms.WM_DELETE_WINDOW; // Allow window to be deleted by the WM
@@ -780,6 +783,12 @@ bool X11_CreateWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Properties
         if (SDL_GetHintBoolean(SDL_HINT_VIDEO_X11_NET_WM_PING, true)) {
             protocols[proto_count++] = data->atoms._NET_WM_PING; // Respond so WM knows we're alive
         }
+
+#ifdef SDL_VIDEO_DRIVER_X11_XSYNC
+        if (use_resize_sync) {
+            protocols[proto_count++] = data->atoms._NET_WM_SYNC_REQUEST; /* Respond after completing resize */
+        }
+#endif /* SDL_VIDEO_DRIVER_X11_XSYNC */
 
         SDL_assert(proto_count <= sizeof(protocols) / sizeof(protocols[0]));
 
@@ -800,6 +809,12 @@ bool X11_CreateWindow(SDL_VideoDevice *_this, SDL_Window *window, SDL_Properties
     // Set the flag if the borders were forced on when creating a fullscreen window for later removal.
     windowdata->fullscreen_borders_forced_on = !!(window->pending_flags & SDL_WINDOW_FULLSCREEN) &&
                                                !!(window->flags & SDL_WINDOW_BORDERLESS);
+
+#ifdef SDL_VIDEO_DRIVER_X11_XSYNC
+    if (use_resize_sync) {
+        X11_InitResizeSync(window);
+    }
+#endif /* SDL_VIDEO_DRIVER_X11_XSYNC */
 
 #if defined(SDL_VIDEO_OPENGL_ES) || defined(SDL_VIDEO_OPENGL_ES2) || defined(SDL_VIDEO_OPENGL_EGL)
     if ((window->flags & SDL_WINDOW_OPENGL) &&
@@ -1045,7 +1060,17 @@ bool X11_SetWindowPosition(SDL_VideoDevice *_this, SDL_Window *window)
 {
     // Sync any pending fullscreen or maximize events.
     if (window->internal->pending_operation & (X11_PENDING_OP_FULLSCREEN | X11_PENDING_OP_MAXIMIZE)) {
+        // Save state in case it is overwritten while synchronizing.
+        const bool use_client_fs_coords = window->use_pending_position_for_fullscreen;
+        const int x = window->floating.x;
+        const int y = window->floating.y;
+
         X11_SyncWindow(_this, window);
+
+        // Restore state that may have been overwritten while synchronizing.
+        window->use_pending_position_for_fullscreen = use_client_fs_coords;
+        window->floating.x = x;
+        window->floating.y = y;
     }
 
     // Position will be set when window is de-maximized
@@ -1976,6 +2001,11 @@ void X11_DestroyWindow(SDL_VideoDevice *_this, SDL_Window *window)
             X11_XDestroyIC(data->ic);
         }
 #endif
+
+#ifdef SDL_VIDEO_DRIVER_X11_XSYNC
+        X11_TermResizeSync(window);
+#endif /* SDL_VIDEO_DRIVER_X11_XSYNC */
+
         if (!(window->flags & SDL_WINDOW_EXTERNAL)) {
             X11_XDestroyWindow(display, data->xwindow);
             X11_XFlush(display);
