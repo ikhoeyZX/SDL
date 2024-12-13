@@ -631,3 +631,9 @@ jobs:
         run: |
           cd "${{ steps.create-gradle-project.outputs.path }}"
           ./gradlew -i assembleRelease -Pandroid.native.buildOutput=verbose
+      - uses: actions/upload-artifact@v4
+        name: 'Release APK'
+        with:
+          name: libSDL2_cmake.zip
+          path: /home/runner/work/SDL/SDL/build/test/
+      
