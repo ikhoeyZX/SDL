@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -35,7 +35,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-bool SDL_SYS_EnumerateDirectory(const char *path, const char *dirname, SDL_EnumerateDirectoryCallback cb, void *userdata)
+bool SDL_SYS_EnumerateDirectory(const char *path, SDL_EnumerateDirectoryCallback cb, void *userdata)
 {
     SDL_EnumerationResult result = SDL_ENUM_CONTINUE;
 
@@ -51,7 +51,7 @@ bool SDL_SYS_EnumerateDirectory(const char *path, const char *dirname, SDL_Enume
         if ((SDL_strcmp(name, ".") == 0) || (SDL_strcmp(name, "..") == 0)) {
             continue;
         }
-        result = cb(userdata, dirname, name);
+        result = cb(userdata, path, name);
     }
 
     closedir(dir);

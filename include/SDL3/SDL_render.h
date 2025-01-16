@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -441,6 +441,11 @@ extern SDL_DECLSPEC const char * SDLCALL SDL_GetRendererName(SDL_Renderer *rende
  *   swapchain images, or potential frames in flight, used by the Vulkan
  *   renderer
  *
+ * With the gpu renderer:
+ *
+ * - `SDL_PROP_RENDERER_GPU_DEVICE_POINTER`: the SDL_GPUDevice associated with
+ *   the renderer
+ *
  * \param renderer the rendering context.
  * \returns a valid property ID on success or 0 on failure; call
  *          SDL_GetError() for more information.
@@ -474,6 +479,7 @@ extern SDL_DECLSPEC SDL_PropertiesID SDLCALL SDL_GetRendererProperties(SDL_Rende
 #define SDL_PROP_RENDERER_VULKAN_GRAPHICS_QUEUE_FAMILY_INDEX_NUMBER "SDL.renderer.vulkan.graphics_queue_family_index"
 #define SDL_PROP_RENDERER_VULKAN_PRESENT_QUEUE_FAMILY_INDEX_NUMBER  "SDL.renderer.vulkan.present_queue_family_index"
 #define SDL_PROP_RENDERER_VULKAN_SWAPCHAIN_IMAGE_COUNT_NUMBER       "SDL.renderer.vulkan.swapchain_image_count"
+#define SDL_PROP_RENDERER_GPU_DEVICE_POINTER                        "SDL.renderer.gpu.device"
 
 /**
  * Get the output size in pixels of a rendering context.
@@ -527,9 +533,8 @@ extern SDL_DECLSPEC bool SDLCALL SDL_GetCurrentRenderOutputSize(SDL_Renderer *re
  * \param access one of the enumerated values in SDL_TextureAccess.
  * \param w the width of the texture in pixels.
  * \param h the height of the texture in pixels.
- * \returns a pointer to the created texture or NULL if no rendering context
- *          was active, the format was unsupported, or the width or height
- *          were out of range; call SDL_GetError() for more information.
+ * \returns the created texture or NULL on failure; call SDL_GetError() for
+ *          more information.
  *
  * \threadsafety This function should only be called on the main thread.
  *
@@ -667,9 +672,8 @@ extern SDL_DECLSPEC SDL_Texture * SDLCALL SDL_CreateTextureFromSurface(SDL_Rende
  *
  * \param renderer the rendering context.
  * \param props the properties to use.
- * \returns a pointer to the created texture or NULL if no rendering context
- *          was active, the format was unsupported, or the width or height
- *          were out of range; call SDL_GetError() for more information.
+ * \returns the created texture or NULL on failure; call SDL_GetError() for
+ *          more information.
  *
  * \threadsafety This function should only be called on the main thread.
  *
@@ -1494,10 +1498,18 @@ extern SDL_DECLSPEC bool SDLCALL SDL_RenderCoordinatesToWindow(SDL_Renderer *ren
  * - The scale (SDL_SetRenderScale)
  * - The viewport (SDL_SetRenderViewport)
  *
+ * Various event types are converted with this function: mouse, touch, pen,
+ * etc.
+ *
  * Touch coordinates are converted from normalized coordinates in the window
  * to non-normalized rendering coordinates.
  *
- * Once converted, the coordinates may be outside the rendering area.
+ * Relative mouse coordinates (xrel and yrel event fields) are _also_
+ * converted. Applications that do not want these fields converted should use
+ * SDL_RenderCoordinatesFromWindow() on the specific event fields instead of
+ * converting the entire event structure.
+ *
+ * Once converted, coordinates may be outside the rendering area.
  *
  * \param renderer the rendering context.
  * \param event the event to modify.
@@ -2098,7 +2110,7 @@ extern SDL_DECLSPEC bool SDLCALL SDL_RenderTextureRotated(SDL_Renderer *renderer
  *
  * \threadsafety You may only call this function from the main thread.
  *
- * \since This function is available since SDL 3.2.0.
+ * \since This function is available since SDL 3.1.8.
  *
  * \sa SDL_RenderTexture
  */
@@ -2530,9 +2542,38 @@ extern SDL_DECLSPEC bool SDLCALL SDL_GetRenderVSync(SDL_Renderer *renderer, int 
  *
  * \since This function is available since SDL 3.1.6.
  *
+ * \sa SDL_RenderDebugTextFormat
  * \sa SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
  */
 extern SDL_DECLSPEC bool SDLCALL SDL_RenderDebugText(SDL_Renderer *renderer, float x, float y, const char *str);
+
+/**
+ * Draw debug text to an SDL_Renderer.
+ *
+ * This function will render a printf()-style format string to a renderer.
+ * Note that this is a convinence function for debugging, with severe
+ * limitations, and is not intended to be used for production apps and games.
+ *
+ * For the full list of limitations and other useful information, see
+ * SDL_RenderDebugText.
+ *
+ * \param renderer the renderer which should draw the text.
+ * \param x the x coordinate where the top-left corner of the text will draw.
+ * \param y the y coordinate where the top-left corner of the text will draw.
+ * \param fmt the format string to draw.
+ * \param ... additional parameters matching % tokens in the `fmt` string, if
+ *            any.
+ * \returns true on success or false on failure; call SDL_GetError() for more
+ *          information.
+ *
+ * \threadsafety This function should only be called on the main thread.
+ *
+ * \since This function is available since SDL 3.1.8.
+ *
+ * \sa SDL_RenderDebugText
+ * \sa SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE
+ */
+extern SDL_DECLSPEC bool SDLCALL SDL_RenderDebugTextFormat(SDL_Renderer *renderer, float x, float y, SDL_PRINTF_FORMAT_STRING const char *fmt, ...) SDL_PRINTF_VARARG_FUNC(4);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

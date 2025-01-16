@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -24,10 +24,6 @@
 
 #include "SDL_cocoavideo.h"
 #include "../../events/SDL_events_c.h"
-
-#ifndef MAC_OS_X_VERSION_10_12
-#define NSEventTypeApplicationDefined NSApplicationDefined
-#endif
 
 static SDL_Window *FindSDLWindowForNSWindow(NSWindow *win)
 {
@@ -136,6 +132,7 @@ static void Cocoa_DispatchEvent(NSEvent *theEvent)
                         change:(NSDictionary *)change
                        context:(void *)context;
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app;
+- (IBAction)menu:(id)sender;
 @end
 
 @implementation SDL3AppDelegate : NSObject
@@ -356,6 +353,13 @@ static void Cocoa_DispatchEvent(NSEvent *theEvent)
     // More-detailed explanation:
     // https://stackoverflow.com/questions/77283578/sonoma-and-nsapplicationdelegate-applicationsupportssecurerestorablestate/77320845#77320845
     return YES;
+}
+
+- (IBAction)menu:(id)sender
+{
+	SDL_TrayEntry *entry = [[sender representedObject] pointerValue];
+
+	SDL_ClickTrayEntry(entry);
 }
 
 @end

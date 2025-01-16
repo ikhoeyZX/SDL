@@ -127,7 +127,7 @@ JOB_SPECS = {
     "android-cmake-lean": JobSpec(name="Android (CMake, lean)",             os=JobOs.UbuntuLatest,  platform=SdlPlatform.Android,     artifact="SDL-lean-android-arm64", android_abi="arm64-v8a", android_arch="aarch64", android_platform=23, lean=True, ),
     "android-mk": JobSpec(name="Android (Android.mk)",                      os=JobOs.UbuntuLatest,  platform=SdlPlatform.Android,     artifact=None,                     no_cmake=True, android_mk=True, ),
     "android-gradle": JobSpec(name="Android (Gradle)",                      os=JobOs.UbuntuLatest,  platform=SdlPlatform.Android,     artifact=None,                     no_cmake=True, android_gradle=True, ),
-    "emscripten": JobSpec(name="Emscripten",                                os=JobOs.UbuntuLatest,  platform=SdlPlatform.Emscripten,  artifact="SDL-emscripten", ),
+    "emscripten": JobSpec(name="Emscripten",                                os=JobOs.Ubuntu22_04,   platform=SdlPlatform.Emscripten,  artifact="SDL-emscripten", ),
     "haiku": JobSpec(name="Haiku",                                          os=JobOs.UbuntuLatest,  platform=SdlPlatform.Haiku,       artifact="SDL-haiku-x64",          container="ghcr.io/haiku/cross-compiler:x86_64-r1beta5", ),
     "loongarch64": JobSpec(name="LoongArch64",                              os=JobOs.UbuntuLatest,  platform=SdlPlatform.LoongArch64, artifact="SDL-loongarch64", ),
     "n3ds": JobSpec(name="Nintendo 3DS",                                    os=JobOs.UbuntuLatest,  platform=SdlPlatform.N3ds,        artifact="SDL-n3ds",               container="devkitpro/devkitarm:latest", ),
@@ -469,7 +469,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
                     job.cmake_arguments.extend([
                         "-DCMAKE_SYSTEM_NAME=iOS",
                         "-DCMAKE_OSX_ARCHITECTURES=\"arm64\"",
-                        "-DCMAKE_OSX_DEPLOYMENT_TARGET=9.0",
+                        "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
                     ])
                 case SdlPlatform.Tvos:
                     if spec.xcode:
@@ -477,7 +477,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
                     job.cmake_arguments.extend([
                         "-DCMAKE_SYSTEM_NAME=tvOS",
                         "-DCMAKE_OSX_ARCHITECTURES=\"arm64\"",
-                        "-DCMAKE_OSX_DEPLOYMENT_TARGET=9.0",
+                        "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
                     ])
         case SdlPlatform.MacOS:
             if spec.apple_framework:
@@ -486,7 +486,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
                 job.test_pkg_config = False
                 job.cmake_arguments.extend((
                     "'-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64'",
-                    "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.11",
+                    "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13",
                     "-DSDL_FRAMEWORK=ON",
                 ))
                 job.shared_lib = SharedLibType.FRAMEWORK
@@ -494,7 +494,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
                 job.clang_tidy = True
                 job.cmake_arguments.extend((
                     "-DCMAKE_OSX_ARCHITECTURES=arm64",
-                    "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.11",
+                    "-DCMAKE_OSX_DEPLOYMENT_TARGET=10.13",
                     "-DCLANG_TIDY_BINARY=$(brew --prefix llvm)/bin/clang-tidy",
                 ))
                 job.shared_lib = SharedLibType.DYLIB
@@ -691,7 +691,7 @@ def spec_to_job(spec: JobSpec, key: str, trackmem_symbol_names: bool) -> JobDeta
             match spec.platform:
                 case SdlPlatform.FreeBSD:
                     job.cpactions_os = "freebsd"
-                    job.cpactions_version = "13.3"
+                    job.cpactions_version = "14.2"
                     job.cpactions_arch = "x86-64"
                     job.cpactions_setup_cmd = "sudo pkg update"
                     job.cpactions_install_cmd = "sudo pkg install -y cmake ninja pkgconf libXcursor libXext libXinerama libXi libXfixes libXrandr libXScrnSaver libXxf86vm wayland wayland-protocols libxkbcommon mesa-libs libglvnd evdev-proto libinotify alsa-lib jackit pipewire pulseaudio sndio dbus zh-fcitx ibus libudev-devd"

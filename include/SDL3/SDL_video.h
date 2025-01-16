@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -112,7 +112,15 @@ typedef enum SDL_SystemTheme
     SDL_SYSTEM_THEME_DARK       /**< Dark colored system theme */
 } SDL_SystemTheme;
 
-/* Internal display mode data */
+/**
+ * Internal display mode data.
+ *
+ * This lives as a field in SDL_DisplayMode, as opaque data.
+ *
+ * \since This struct is available since SDL 3.1.3.
+ *
+ * \sa SDL_DisplayMode
+ */
 typedef struct SDL_DisplayModeData SDL_DisplayModeData;
 
 /**
@@ -206,26 +214,86 @@ typedef Uint64 SDL_WindowFlags;
 
 
 /**
- * Used to indicate that you don't care what the window position is.
+ * A magic value used with SDL_WINDOWPOS_UNDEFINED.
+ *
+ * Generally this macro isn't used directly, but rather through
+ * SDL_WINDOWPOS_UNDEFINED or SDL_WINDOWPOS_UNDEFINED_DISPLAY.
  *
  * \since This macro is available since SDL 3.1.3.
  */
 #define SDL_WINDOWPOS_UNDEFINED_MASK    0x1FFF0000u
-#define SDL_WINDOWPOS_UNDEFINED_DISPLAY(X)  (SDL_WINDOWPOS_UNDEFINED_MASK|(X))
-#define SDL_WINDOWPOS_UNDEFINED         SDL_WINDOWPOS_UNDEFINED_DISPLAY(0)
-#define SDL_WINDOWPOS_ISUNDEFINED(X)    \
-            (((X)&0xFFFF0000) == SDL_WINDOWPOS_UNDEFINED_MASK)
 
 /**
- * Used to indicate that the window position should be centered.
+ * Used to indicate that you don't care what the window position is.
+ *
+ * If you _really_ don't care, SDL_WINDOWPOS_UNDEFINED is the same, but always
+ * uses the primary display instead of specifying one.
+ *
+ * \param X the SDL_DisplayID of the display to use.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
+#define SDL_WINDOWPOS_UNDEFINED_DISPLAY(X)  (SDL_WINDOWPOS_UNDEFINED_MASK|(X))
+
+/**
+ * Used to indicate that you don't care what the window position/display is.
+ *
+ * This always uses the primary display.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
+#define SDL_WINDOWPOS_UNDEFINED         SDL_WINDOWPOS_UNDEFINED_DISPLAY(0)
+
+/**
+ * A macro to test if the window position is marked as "undefined."
+ *
+ * \param X the window position value.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
+#define SDL_WINDOWPOS_ISUNDEFINED(X)    (((X)&0xFFFF0000) == SDL_WINDOWPOS_UNDEFINED_MASK)
+
+/**
+ * A magic value used with SDL_WINDOWPOS_CENTERED.
+ *
+ * Generally this macro isn't used directly, but rather through
+ * SDL_WINDOWPOS_CENTERED or SDL_WINDOWPOS_CENTERED_DISPLAY.
  *
  * \since This macro is available since SDL 3.1.3.
  */
 #define SDL_WINDOWPOS_CENTERED_MASK    0x2FFF0000u
+
+/**
+ * Used to indicate that the window position should be centered.
+ *
+ * SDL_WINDOWPOS_CENTERED is the same, but always uses the primary display
+ * instead of specifying one.
+ *
+ * \param X the SDL_DisplayID of the display to use.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
 #define SDL_WINDOWPOS_CENTERED_DISPLAY(X)  (SDL_WINDOWPOS_CENTERED_MASK|(X))
+
+/**
+ * Used to indicate that the window position should be centered.
+ *
+ * This always uses the primary display.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
 #define SDL_WINDOWPOS_CENTERED         SDL_WINDOWPOS_CENTERED_DISPLAY(0)
+
+/**
+ * A macro to test if the window position is marked as "centered."
+ *
+ * \param X the window position value.
+ *
+ * \since This macro is available since SDL 3.1.3.
+ */
 #define SDL_WINDOWPOS_ISCENTERED(X)    \
             (((X)&0xFFFF0000) == SDL_WINDOWPOS_CENTERED_MASK)
+
 
 /**
  * Window flash operation.
@@ -249,14 +317,38 @@ typedef enum SDL_FlashOperation
 typedef struct SDL_GLContextState *SDL_GLContext;
 
 /**
- * Opaque EGL types.
+ * Opaque type for an EGL display.
  *
  * \since This datatype is available since SDL 3.1.3.
  */
 typedef void *SDL_EGLDisplay;
+
+/**
+ * Opaque type for an EGL config.
+ *
+ * \since This datatype is available since SDL 3.1.3.
+ */
 typedef void *SDL_EGLConfig;
+
+/**
+ * Opaque type for an EGL surface.
+ *
+ * \since This datatype is available since SDL 3.1.3.
+ */
 typedef void *SDL_EGLSurface;
+
+/**
+ * An EGL attribute, used when creating an EGL context.
+ *
+ * \since This datatype is available since SDL 3.1.3.
+ */
 typedef intptr_t SDL_EGLAttrib;
+
+/**
+ * An EGL integer attribute, used when creating an EGL surface.
+ *
+ * \since This datatype is available since SDL 3.1.3.
+ */
 typedef int SDL_EGLint;
 
 /**
@@ -1136,10 +1228,12 @@ extern SDL_DECLSPEC SDL_Window * SDLCALL SDL_CreatePopupWindow(SDL_Window *paren
  * - `SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER`: the width of the window
  * - `SDL_PROP_WINDOW_CREATE_X_NUMBER`: the x position of the window, or
  *   `SDL_WINDOWPOS_CENTERED`, defaults to `SDL_WINDOWPOS_UNDEFINED`. This is
- *   relative to the parent for windows with the "parent" property set.
+ *   relative to the parent for windows with the "tooltip" or "menu" property
+ *   set.
  * - `SDL_PROP_WINDOW_CREATE_Y_NUMBER`: the y position of the window, or
  *   `SDL_WINDOWPOS_CENTERED`, defaults to `SDL_WINDOWPOS_UNDEFINED`. This is
- *   relative to the parent for windows with the "parent" property set.
+ *   relative to the parent for windows with the "tooltip" or "menu" property
+ *   set.
  *
  * These are additional supported properties on macOS:
  *
@@ -1529,13 +1623,12 @@ extern SDL_DECLSPEC bool SDLCALL SDL_SetWindowIcon(SDL_Window *window, SDL_Surfa
 /**
  * Request that the window's position be set.
  *
- * If, at the time of this request, the window is in a fixed-size state such
- * as maximized, this request may be deferred until the window returns to a
- * resizable state.
+ * If the window is in an exclusive fullscreen or maximized state, this
+ * request has no effect.
  *
  * This can be used to reposition fullscreen-desktop windows onto a different
- * display, however, exclusive fullscreen windows are locked to a specific
- * display and can only be repositioned programmatically via
+ * display, however, as exclusive fullscreen windows are locked to a specific
+ * display, they can only be repositioned programmatically via
  * SDL_SetWindowFullscreenMode().
  *
  * On some windowing systems this request is asynchronous and the new
@@ -1596,12 +1689,11 @@ extern SDL_DECLSPEC bool SDLCALL SDL_GetWindowPosition(SDL_Window *window, int *
 /**
  * Request that the size of a window's client area be set.
  *
- * If, at the time of this request, the window in a fixed-size state, such as
- * maximized or fullscreen, the request will be deferred until the window
- * exits this state and becomes resizable again.
+ * If the window is in a fullscreen or maximized state, this request has no
+ * effect.
  *
- * To change the fullscreen mode of a window, use
- * SDL_SetWindowFullscreenMode()
+ * To change the exclusive fullscreen mode of a window, use
+ * SDL_SetWindowFullscreenMode().
  *
  * On some windowing systems, this request is asynchronous and the new window
  * size may not have have been applied immediately upon the return of this
@@ -2021,6 +2113,9 @@ extern SDL_DECLSPEC bool SDLCALL SDL_MaximizeWindow(SDL_Window *window);
 /**
  * Request that the window be minimized to an iconic representation.
  *
+ * If the window is in a fullscreen state, this request has no direct effect.
+ * It may alter the state the window is returned to when leaving fullscreen.
+ *
  * On some windowing systems this request is asynchronous and the new window
  * state may not have been applied immediately upon the return of this
  * function. If an immediate change is required, call SDL_SyncWindow() to
@@ -2047,6 +2142,9 @@ extern SDL_DECLSPEC bool SDLCALL SDL_MinimizeWindow(SDL_Window *window);
 /**
  * Request that the size and position of a minimized or maximized window be
  * restored.
+ *
+ * If the window is in a fullscreen state, this request has no direct effect.
+ * It may alter the state the window is returned to when leaving fullscreen.
  *
  * On some windowing systems this request is asynchronous and the new window
  * state may not have have been applied immediately upon the return of this
@@ -2689,6 +2787,10 @@ extern SDL_DECLSPEC bool SDLCALL SDL_FlashWindow(SDL_Window *window, SDL_FlashOp
  *
  * Any child windows owned by the window will be recursively destroyed as
  * well.
+ *
+ * Note that on some platforms, the visible window may not actually be removed
+ * from the screen until the SDL event loop is pumped again, even though the
+ * SDL_Window is no longer valid after this call.
  *
  * \param window the window to destroy.
  *

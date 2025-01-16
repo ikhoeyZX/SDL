@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -23,6 +23,11 @@
  * # CategoryKeyboard
  *
  * SDL keyboard management.
+ *
+ * Please refer to the Best Keyboard Practices document for details on how
+ * best to accept keyboard input in various types of programs:
+ *
+ * https://wiki.libsdl.org/SDL3/BestKeyboardPractices
  */
 
 #ifndef SDL_keyboard_h_
@@ -312,6 +317,8 @@ extern SDL_DECLSPEC SDL_Scancode SDLCALL SDL_GetScancodeFromName(const char *nam
  * Get a human-readable name for a key.
  *
  * If the key doesn't have a name, this function returns an empty string ("").
+ *
+ * Letters will be presented in their uppercase form, if applicable.
  *
  * \param key the desired SDL_Keycode to query.
  * \returns a UTF-8 encoded string of the key name.

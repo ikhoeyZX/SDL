@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -61,6 +61,24 @@ typedef struct
 int getFilterIndex(int as_reported_by_windows)
 {
     return as_reported_by_windows - 1;
+}
+
+char *clear_filt_names(const char *filt)
+{
+    char *cleared = SDL_strdup(filt);
+
+    for (char *c = cleared; *c; c++) {
+        /* 0x01 bytes are used as temporary replacement for the various 0x00
+           bytes required by Win32 (one null byte between each filter, two at
+           the end of the filters). Filter out these bytes from the filter names
+           to avoid early-ending the filters if someone puts two consecutive
+           0x01 bytes in their filter names. */
+        if (*c == '\x01') {
+            *c = ' ';
+        }
+    }
+
+    return cleared;
 }
 
 // TODO: The new version of file dialogs
@@ -161,7 +179,7 @@ void windows_ShowFileDialog(void *ptr)
     if (filters) {
         // '\x01' is used in place of a null byte
         // suffix needs two null bytes in case the filter list is empty
-        char *filterlist = convert_filters(filters, nfilters, NULL, "", "",
+        char *filterlist = convert_filters(filters, nfilters, clear_filt_names, "", "",
                                            "\x01\x01", "", "\x01", "\x01",
                                            "*.", ";*.", "");
 
@@ -203,7 +221,7 @@ void windows_ShowFileDialog(void *ptr)
             title_len = 0;
         }
 
-        int title_wlen = MultiByteToWideChar(CP_UTF8, 0, title, title_len, NULL, 0);
+        int title_wlen = MultiByteToWideChar(CP_UTF8, 0, title, -1, NULL, 0);
 
         if (title_wlen < 0) {
             title_wlen = 0;
@@ -218,7 +236,7 @@ void windows_ShowFileDialog(void *ptr)
             return;
         }
 
-        MultiByteToWideChar(CP_UTF8, 0, title, title_len, title_w, title_wlen);
+        MultiByteToWideChar(CP_UTF8, 0, title, -1, title_w, title_wlen);
     }
 
     OPENFILENAMEW dialog;

@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -121,7 +121,7 @@ bool SDL_EnumerateDirectory(const char *path, SDL_EnumerateDirectoryCallback cal
     } else if (!callback) {
         return SDL_InvalidParamError("callback");
     }
-    return SDL_SYS_EnumerateDirectory(path, path, callback, userdata);
+    return SDL_SYS_EnumerateDirectory(path, callback, userdata);
 }
 
 bool SDL_GetPathInfo(const char *path, SDL_PathInfo *info)

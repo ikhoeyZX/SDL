@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 GIT_HASH_FILENAME = ".git-hash"
 REVISION_TXT = "REVISION.txt"
 
+RE_ILLEGAL_MINGW_LIBRARIES = re.compile(r"(?:lib)?(?:gcc|(?:std)?c[+][+]|(?:win)?pthread).*", flags=re.I)
+
 
 def safe_isotime_to_datetime(str_isotime: str) -> datetime.datetime:
     try:
@@ -339,6 +341,12 @@ class ArchiveFileTree:
     def add_file(self, file: NodeInArchive):
         self._tree[file.arcpath] = file
 
+    def __iter__(self) -> typing.Iterable[NodeInArchive]:
+        yield from self._tree.values()
+
+    def __contains__(self, value: str) -> bool:
+        return value in self._tree
+
     def get_latest_mod_time(self) -> datetime.datetime:
         return max(item.time for item in self._tree.values() if item.time)
 
@@ -353,7 +361,6 @@ class ArchiveFileTree:
             target = dest_dir + s.symtarget
             while True:
                 new_target, n = re.subn(r"([^/]+/+[.]{2}/)", "", target)
-                print(f"{target=} {new_target=}")
                 target = new_target
                 if not n:
                     break
@@ -587,11 +594,21 @@ class Releaser:
     def create_source_archives(self) -> None:
         source_collector = SourceCollector(root=self.root, commit=self.commit, executer=self.executer, filter=self._path_filter)
         print(f"Collecting sources of {self.project}...")
-        archive_tree = source_collector.get_archive_file_tree()
+        archive_tree: ArchiveFileTree = source_collector.get_archive_file_tree()
         latest_mod_time = archive_tree.get_latest_mod_time()
         archive_tree.add_file(NodeInArchive.from_text(arcpath=REVISION_TXT, text=f"{self.revision}\n", time=latest_mod_time))
         archive_tree.add_file(NodeInArchive.from_text(arcpath=f"{GIT_HASH_FILENAME}", text=f"{self.commit}\n", time=latest_mod_time))
         archive_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["source"].get("files", {}), file_mapping_root=self.root, context=self.get_context(), time=latest_mod_time)
+
+        if "Makefile.am" in archive_tree:
+            patched_time = latest_mod_time + datetime.timedelta(minutes=1)
+            print(f"Makefile.am detected -> touching aclocal.m4, */Makefile.in, configure")
+            for node_data in archive_tree:
+                arc_name = os.path.basename(node_data.arcpath)
+                arc_name_we, arc_name_ext = os.path.splitext(arc_name)
+                if arc_name in ("aclocal.m4", "configure", "Makefile.in"):
+                    print(f"Bumping time of {node_data.arcpath}")
+                    node_data.time = patched_time
 
         archive_base = f"{self.project}-{self.version}"
         zip_path = self.dist_path / f"{archive_base}.zip"
@@ -668,6 +685,15 @@ class Releaser:
     @property
     def git_hash_data(self) -> bytes:
         return f"{self.commit}\n".encode()
+
+    def verify_mingw_library(self, triplet: str, path: Path):
+        objdump_output = self.executer.check_output([f"{triplet}-objdump", "-p", str(path)])
+        libraries = re.findall(r"DLL Name: ([^\n]+)", objdump_output)
+        logger.info("%s (%s) libraries: %r", path, triplet, libraries)
+        illegal_libraries = list(filter(RE_ILLEGAL_MINGW_LIBRARIES.match, libraries))
+        logger.error("Detected 'illegal' libraries: %r", illegal_libraries)
+        if illegal_libraries:
+            raise Exception(f"{path} links to illegal libraries: {illegal_libraries}")
 
     def create_mingw_archives(self) -> None:
         build_type = "Release"
@@ -767,11 +793,15 @@ class Releaser:
                         f"--bindir=${{prefix}}/bin",
                         f"--host={triplet}",
                         f"--build=x86_64-none-linux-gnu",
+                        "CFLAGS=-O2",
+                        "CXXFLAGS=-O2",
+                        "LDFLAGS=-Wl,-s",
                     ] + extra_args, cwd=build_path, env=new_env)
                 with self.section_printer.group(f"Build MinGW {triplet} (autotools)"):
                     self.executer.run(["make", f"-j{self.cpu_count}"], cwd=build_path, env=new_env)
                 with self.section_printer.group(f"Install MinGW {triplet} (autotools)"):
                     self.executer.run(["make", "install"], cwd=build_path, env=new_env)
+                self.verify_mingw_library(triplet=ARCH_TO_TRIPLET[arch], path=install_path / "bin" / f"{self.project}.dll")
                 archive_file_tree.add_directory_tree(arc_dir=arc_join(arc_root, triplet), path=install_path, time=self.arc_time)
 
                 print("Recording arch-dependent extra files for MinGW development archive ...")
@@ -827,6 +857,7 @@ class Releaser:
                         self.executer.run(["cmake", "--build", str(build_path), "--verbose", "--config", build_type], cwd=build_path, env=new_env)
                     with self.section_printer.group(f"Install MinGW {triplet} (CMake)"):
                         self.executer.run(["cmake", "--install", str(build_path)], cwd=build_path, env=new_env)
+                self.verify_mingw_library(triplet=ARCH_TO_TRIPLET[arch], path=install_path / "bin" / f"{self.project}.dll")
                 archive_file_tree.add_directory_tree(arc_dir=arc_join(arc_root, triplet), path=install_path, time=self.arc_time)
 
                 print("Recording arch-dependent extra files for MinGW development archive ...")
@@ -860,6 +891,8 @@ class Releaser:
         platform_versions = []
         for platform_dir in platform_dirs:
             logger.debug("Found Android Platform SDK: %s", platform_dir)
+            if not (platform_dir / "android.jar").is_file():
+                continue
             if m:= re_platform.match(platform_dir.name):
                 platform_versions.append(int(m.group(1)))
         platform_versions.sort()
@@ -930,7 +963,8 @@ class Releaser:
         if not cmake_toolchain_file.exists():
             logger.error("CMake toolchain file does not exist (%s)", cmake_toolchain_file)
             raise SystemExit(1)
-        aar_path =  self.dist_path / f"{self.project}-{self.version}.aar"
+        aar_path = self.root / "build-android" / f"{self.project}-{self.version}.aar"
+        android_dist_path = self.dist_path / f"{self.project}-devel-{self.version}-android.zip"
         android_abis = self.release_info["android"]["abis"]
         java_jars_added = False
         module_data_added = False
@@ -938,14 +972,24 @@ class Releaser:
         shutil.rmtree(android_deps_path, ignore_errors=True)
 
         for dep, depinfo in self.release_info["android"].get("dependencies", {}).items():
-            android_aar = self.deps_path / glob.glob(depinfo["artifact"], root_dir=self.deps_path)[0]
-            with self.section_printer.group(f"Extracting Android dependency {dep} ({android_aar.name})"):
-                self.executer.run([sys.executable, str(android_aar), "-o", str(android_deps_path)])
+            dep_devel_zip = self.deps_path / glob.glob(depinfo["artifact"], root_dir=self.deps_path)[0]
+
+            dep_extract_path = self.deps_path / f"extract/android/{dep}"
+            shutil.rmtree(dep_extract_path, ignore_errors=True)
+            dep_extract_path.mkdir(parents=True, exist_ok=True)
+
+            with self.section_printer.group(f"Extracting Android dependency {dep} ({dep_devel_zip})"):
+                with zipfile.ZipFile(dep_devel_zip, "r") as zf:
+                    zf.extractall(dep_extract_path)
+
+                dep_devel_aar = dep_extract_path / glob.glob("*.aar", root_dir=dep_extract_path)[0]
+                self.executer.run([sys.executable, str(dep_devel_aar), "-o", str(android_deps_path)])
 
         for module_name, module_info in self.release_info["android"]["modules"].items():
             assert "type" in module_info and module_info["type"] in ("interface", "library"), f"module {module_name} must have a valid type"
 
-        archive_file_tree = ArchiveFileTree()
+        aar_file_tree = ArchiveFileTree()
+        android_devel_file_tree = ArchiveFileTree()
 
         for android_abi in android_abis:
             with self.section_printer.group(f"Building for Android {android_api} {android_abi}"):
@@ -996,20 +1040,20 @@ class Releaser:
                         assert library.suffix in (".so", ".a")
                         assert library.is_file(), f"CMake should have built library '{library}' for module {module_name}"
                         arcdir_prefab_libs = f"{arcdir_prefab_module}/libs/android.{android_abi}"
-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath=f"{arcdir_prefab_libs}/{library.name}", path=library, time=self.arc_time))
-                        archive_file_tree.add_file(NodeInArchive.from_text(arcpath=f"{arcdir_prefab_libs}/abi.json", text=self._get_prefab_abi_json_text(abi=android_abi, cpp=False, shared=library.suffix == ".so"), time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath=f"{arcdir_prefab_libs}/{library.name}", path=library, time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_text(arcpath=f"{arcdir_prefab_libs}/abi.json", text=self._get_prefab_abi_json_text(abi=android_abi, cpp=False, shared=library.suffix == ".so"), time=self.arc_time))
 
                     if not module_data_added:
                         library_name = None
                         if module_info["type"] == "library":
                             library_name = Path(module_info["library"]).stem.removeprefix("lib")
                         export_libraries = module_info.get("export-libraries", [])
-                        archive_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_module, "module.json"), text=self._get_prefab_module_json_text(library_name=library_name, export_libraries=export_libraries), time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_module, "module.json"), text=self._get_prefab_module_json_text(library_name=library_name, export_libraries=export_libraries), time=self.arc_time))
                         arcdir_prefab_include = f"prefab/modules/{module_name}/include"
                         if "includes" in module_info:
-                            archive_file_tree.add_file_mapping(arc_dir=arcdir_prefab_include, file_mapping=module_info["includes"], file_mapping_root=install_dir, context=self.get_context(), time=self.arc_time)
+                            aar_file_tree.add_file_mapping(arc_dir=arcdir_prefab_include, file_mapping=module_info["includes"], file_mapping_root=install_dir, context=self.get_context(), time=self.arc_time)
                         else:
-                            archive_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_include, ".keep"), text="\n", time=self.arc_time))
+                            aar_file_tree.add_file(NodeInArchive.from_text(arcpath=arc_join(arcdir_prefab_include, ".keep"), text="\n", time=self.arc_time))
                 module_data_added = True
 
                 if not java_jars_added:
@@ -1022,21 +1066,28 @@ class Releaser:
                         assert sources_jar_path.is_file(), f"CMake should have archived the java sources into a JAR ({sources_jar_path})"
                         assert doc_jar_path.is_file(), f"CMake should have archived javadoc into a JAR ({doc_jar_path})"
 
-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes.jar", path=classes_jar_path, time=self.arc_time))
-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-sources.jar", path=sources_jar_path, time=self.arc_time))
-                        archive_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-doc.jar", path=doc_jar_path, time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes.jar", path=classes_jar_path, time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-sources.jar", path=sources_jar_path, time=self.arc_time))
+                        aar_file_tree.add_file(NodeInArchive.from_fs(arcpath="classes-doc.jar", path=doc_jar_path, time=self.arc_time))
 
         assert ("jars" in self.release_info["android"] and java_jars_added) or "jars" not in self.release_info["android"], "Must have archived java JAR archives"
 
-        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"].get("files", {}), file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
+        aar_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"]["aar-files"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
 
-        archive_file_tree.add_file(NodeInArchive.from_text(arcpath="prefab/prefab.json", text=self._get_prefab_json_text(), time=self.arc_time))
-        archive_file_tree.add_file(NodeInArchive.from_text(arcpath="AndroidManifest.xml", text=self._get_android_manifest_text(), time=self.arc_time))
+        aar_file_tree.add_file(NodeInArchive.from_text(arcpath="prefab/prefab.json", text=self._get_prefab_json_text(), time=self.arc_time))
+        aar_file_tree.add_file(NodeInArchive.from_text(arcpath="AndroidManifest.xml", text=self._get_android_manifest_text(), time=self.arc_time))
 
         with Archiver(zip_path=aar_path) as archiver:
-            archive_file_tree.add_to_archiver(archive_base="", archiver=archiver)
+            aar_file_tree.add_to_archiver(archive_base="", archiver=archiver)
             archiver.add_git_hash(arcdir="", commit=self.commit, time=self.arc_time)
-        self.artifacts[f"android-aar"] = aar_path
+
+        android_devel_file_tree.add_file(NodeInArchive.from_fs(arcpath=aar_path.name, path=aar_path))
+        android_devel_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["android"]["files"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
+        with Archiver(zip_path=android_dist_path) as archiver:
+            android_devel_file_tree.add_to_archiver(archive_base="", archiver=archiver)
+            archiver.add_git_hash(arcdir="", commit=self.commit, time=self.arc_time)
+
+        self.artifacts[f"android-aar"] = android_dist_path
 
     def download_dependencies(self):
         shutil.rmtree(self.deps_path, ignore_errors=True)
@@ -1073,7 +1124,7 @@ class Releaser:
                 assert len(msvc_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {msvc_matches}"
             if "android" in self.release_info:
                 android_matches = glob.glob(self.release_info["android"]["dependencies"][dep]["artifact"], root_dir=self.deps_path)
-                assert len(android_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {msvc_matches}"
+                assert len(android_matches) == 1, f"Exactly one archive matches msvc {dep} dependency: {android_matches}"
 
     @staticmethod
     def _arch_to_vs_platform(arch: str, configuration: str="Release") -> VsArchPlatformConfig:
@@ -1199,6 +1250,10 @@ class Releaser:
         platform_context = self.get_context(extra_context=arch_platform.extra_context())
 
         build_type = "Release"
+        extra_context = {
+            "ARCH": arch_platform.arch,
+            "PLATFORM": arch_platform.platform,
+        }
 
         built_paths = set(install_path / configure_text(f, context=platform_context) for file_mapping in (self.release_info["msvc"]["cmake"]["files-lib"], self.release_info["msvc"]["cmake"]["files-devel"]) for files_list in file_mapping.values() for f in files_list)
         logger.info("CMake builds these files, to be included in the package: %s", built_paths)
@@ -1249,7 +1304,7 @@ class Releaser:
         logger.info("Collecting files...")
         archive_file_tree = ArchiveFileTree()
         archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["cmake"]["files-lib"], file_mapping_root=install_path, context=platform_context, time=self.arc_time)
-        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["files-lib"], file_mapping_root=self.root, context=self.get_context(), time=self.arc_time)
+        archive_file_tree.add_file_mapping(arc_dir="", file_mapping=self.release_info["msvc"]["files-lib"], file_mapping_root=self.root, context=self.get_context(extra_context=extra_context), time=self.arc_time)
 
         logger.info("Creating %s", zip_path)
         with Archiver(zip_path=zip_path) as archiver:
@@ -1440,8 +1495,11 @@ def main(argv=None) -> int:
         if args.android_api is None:
             with section_printer.group("Detect Android APIS"):
                 args.android_api = releaser._detect_android_api(android_home=args.android_home)
-        if args.android_api is None or not (Path(args.android_home) / f"platforms/android-{args.android_api}").is_dir():
+        if args.android_api is None:
             parser.error("Invalid --android-api, and/or could not be detected")
+        android_api_path = Path(args.android_home) / f"platforms/android-{args.android_api}"
+        if not android_api_path.is_dir():
+            parser.error(f"Android API directory does not exist ({android_api_path})")
         with section_printer.group("Android arguments"):
             print(f"android_home     = {args.android_home}")
             print(f"android_ndk_home = {args.android_ndk_home}")

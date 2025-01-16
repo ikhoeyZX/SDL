@@ -1,6 +1,6 @@
 /*
   Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
+  Copyright (C) 1997-2025 Sam Lantinga <slouken@libsdl.org>
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -195,7 +195,7 @@ static SDL_AsyncIOTask *ProcessCQE(WinIoRingAsyncIOQueueData *queuedata, IORING_
             task = (SDL_AsyncIOTask *) cancel_task->app_userdata;
             SDL_free(cancel_task);
             if (SUCCEEDED(cqe->ResultCode)) {  // cancel was successful?
-                task->result = SDL_ASYNCIO_CANCELLED;
+                task->result = SDL_ASYNCIO_CANCELED;
             } else {
                 task = NULL; // it already finished or was too far along to cancel, so we'll pick up the actual results later.
             }
@@ -413,7 +413,7 @@ static bool ioring_asyncio_write(void *userdata, SDL_AsyncIOTask *task)
     // have to hold a lock because otherwise two threads could get_sqe and submit while one request isn't fully set up.
     SDL_LockMutex(queuedata->sqe_lock);
     bool retval;
-    const HRESULT hr = ioring.BuildIoRingWriteFile(queuedata->ring, href, bref, (UINT32) task->requested_size, task->offset, FILE_WRITE_FLAGS_NONE, (UINT_PTR) task, IOSQE_FLAGS_NONE);
+    const HRESULT hr = ioring.BuildIoRingWriteFile(queuedata->ring, href, bref, (UINT32) task->requested_size, task->offset, 0 /*FILE_WRITE_FLAGS_NONE*/, (UINT_PTR) task, IOSQE_FLAGS_NONE);
     if (FAILED(hr)) {
         retval = WIN_SetErrorFromHRESULT("BuildIoRingWriteFile", hr);
     } else {
