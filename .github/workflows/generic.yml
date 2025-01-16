@@ -216,6 +216,12 @@ jobs:
               ${{ matrix.platform.android-apks }} \
             --verbose \
             -- ${{ matrix.platform.cmake-build-arguments }}
+      - name: "Upload test apk's (CMake)"
+        uses: actions/upload-artifact@v4
+        with:
+          name: libSDL3_test_apk.zip
+          path: /home/runner/work/SDL/SDL/build/
+             
       - name: 'Install (CMake)'
         id: install
         if: ${{ always() && steps.build.outcome == 'success' }}
