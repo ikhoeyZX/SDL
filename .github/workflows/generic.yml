@@ -217,6 +217,8 @@ jobs:
             --verbose \
             -- ${{ matrix.platform.cmake-build-arguments }}
       - name: "Upload test apk's (CMake)"
+        id: apks
+        if: ${{ always() && steps.build.outcome == 'success' && matrix.platform.android-apks != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: libSDL3_test_apk.zip
