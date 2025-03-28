@@ -90,9 +90,12 @@ jobs:
           mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake
           mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/
           mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/arm64-v8a/
+          mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/armeabi-v7a/
           ls -l /home/runner/work/SDL/SDL/
           cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/SDL/prefix/uploads_cmake/
           cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/arm64-v8a/
+          cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/armeabi-v7a/
+
 
    #   - if: ${{ matrix.platform.name == 'Android.mk' }}
    #     name: filtering androidmk folder
@@ -108,7 +111,7 @@ jobs:
         with:
           name: libSDL2_cmake.zip
           path: /home/runner/work/SDL/SDL/prefix/uploads_cmake/
-          
+
     #  - if: ${{ matrix.platform.name == 'Android.mk' }}
     #    uses: actions/upload-artifact@v4
     #    with:
