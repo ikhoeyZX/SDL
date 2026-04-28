@@ -24,9 +24,9 @@ jobs:
         if: ${{ matrix.platform.name == 'Android.mk' }}
         run: |
           ./build-scripts/androidbuildlibs.sh
-   #       mkdir /home/runner/work/SDL/build_mk
-   #       cp -R /home/runner/work/SDL/build-scripts /home/runner/work/SDL/build_mk/
-   #       cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/build_mk/
+          mkdir /home/runner/work/SDL/build_mk
+          cp -R /home/runner/work/SDL/build-scripts /home/runner/work/SDL/build_mk/
+          cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/build_mk/
   
       - name: Setup (CMake)
         if: ${{ matrix.platform.name == 'CMake' }}
