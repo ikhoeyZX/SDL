@@ -12,8 +12,9 @@ jobs:
       matrix:
         platform:
           - { name: Android.mk  }
-          - { name: CMake, cmake: 1, android_abi: "arm64-v8a, armeabi-v7a", android_platform: 23, arch: "aarch64, arm-neon"}
-
+          - { name: CMake, cmake: 1, android_abi: "arm64-v8a", android_platform: 23, arch: "aarch64" }
+          - { name: CMake, cmake: 1, android_abi: "armeabi-v7a", android_platform: 23, arch: "arm-neon" }
+          
     steps:
       - uses: actions/checkout@v4
       - uses: nttld/setup-ndk@v1
@@ -24,10 +25,18 @@ jobs:
         if: ${{ matrix.platform.name == 'Android.mk' }}
         run: |
           ./build-scripts/androidbuildlibs.sh
-          mkdir /home/runner/work/SDL/build_mk
-          cp -R /home/runner/work/SDL/build-scripts /home/runner/work/SDL/build_mk/
-          cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/build_mk/
-  
+   #       mkdir /home/runner/work/SDL/build_mk
+   #       cp -R /home/runner/work/SDL/build-scripts /home/runner/work/SDL/build_mk/
+   #       cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/build_mk/
+
+      - if: ${{ matrix.platform.name == 'CMake' }}
+        name: create Cmake zip folder
+        run: |
+          mkdir /home/runner/work/SDL/uploads_cmake
+          mkdir /home/runner/work/SDL/uploads_cmake/lib/
+          mkdir /home/runner/work/SDL/uploads_cmake/lib/arm64-v8a/
+          mkdir /home/runner/work/SDL/uploads_cmake/lib/armeabi-v7a/
+          
       - name: Setup (CMake)
         if: ${{ matrix.platform.name == 'CMake' }}
         run: |
@@ -84,21 +93,18 @@ jobs:
           export NDK_MODULE_PATH=${{ env.SDL2_DIR }}/share/ndk-modules
           ndk-build -C ${{ github.workspace }}/cmake/test APP_PLATFORM=android-${{ matrix.platform.android_platform }} APP_ABI=${{ matrix.platform.android_abi }} NDK_OUT=$PWD NDK_LIBS_OUT=$PWD V=1
 
-      - if: ${{ matrix.platform.name == 'CMake' }}
+      - if: ${{ matrix.platform.android_abi == 'arm64-v8a' && matrix.platform.name == 'CMake' }}
         name: create Cmake zip folder
         run: |
-          mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake
-          mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/
-          mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/arm64-v8a/
-          mkdir /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/armeabi-v7a/
-          ls -l /home/runner/work/SDL/SDL/
-          ls -l /home/runner/work/SDL/SDL/*
-          ls -l /home/runner/work/SDL/SDL/*/*
-          cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/SDL/prefix/uploads_cmake/
-          cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/arm64-v8a/
-          cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/SDL/prefix/uploads_cmake/lib/armeabi-v7a/
-
-
+          cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL/uploads_cmake/
+          cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/uploads_cmake/lib/arm64-v8a/
+          
+      - if: ${{ matrix.platform.android_abi == 'armeabi-v7a' && matrix.platform.name == 'CMake' }}
+        name: create Cmake zip folder
+        run: |
+          cp -R /home/runner/work/SDL/SDL/include /home/runner/work/SDL//uploads_cmake/
+          cp /home/runner/work/SDL/SDL/prefix/lib/libSDL2.a /home/runner/work/SDL/uploads_cmake/lib/armeabi-v7a/
+ 
    #   - if: ${{ matrix.platform.name == 'Android.mk' }}
    #     name: filtering androidmk folder
    #     run: |
@@ -112,11 +118,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libSDL2_cmake.zip
-          path: /home/runner/work/SDL/SDL/prefix/uploads_cmake/
+          path: /home/runner/work/SDL/uploads_cmake/
 
-      - if: ${{ matrix.platform.name == 'Android.mk' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: libSDL2_androidmk.zip
-          path: /home/runner/work/SDL/build_mk/android/
+    #  - if: ${{ matrix.platform.name == 'Android.mk' }}
+    #    uses: actions/upload-artifact@v4
+    #    with:
+    #      name: libSDL2_androidmk.zip
+    #      path: /home/runner/work/SDL/build_mk/android/
           
